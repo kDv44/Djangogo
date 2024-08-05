@@ -1,4 +1,5 @@
-from django.db.models import Prefetch, F, Sum
+from django.db.models import Prefetch, Sum
+from django.core.cache import cache
 from rest_framework.viewsets import ReadOnlyModelViewSet
 
 from clients.models import Client
@@ -6,7 +7,6 @@ from services.models import Subscription
 from services.serializers import SubscriptionSerializer
 
 
-# Create your views here.
 class SubscriptionView(ReadOnlyModelViewSet):
     queryset = Subscription.objects.all().prefetch_related(
         "plan",
@@ -24,12 +24,17 @@ class SubscriptionView(ReadOnlyModelViewSet):
 
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())
-
         response = super().list(request, *args, **kwargs)
+
+        total_price = cache.get('price_cache')
+
+        if total_price is None:
+            total_price = queryset.aggregate(total=Sum("price")).get("total")
+            cache.set('price_cache', total_price, timeout=10)
 
         response_data = {
             "result": response.data,
-            "total_amount": queryset.aggregate(total=Sum("price")).get("total"),
+            "total_amount": total_price,
         }
         response.data = response_data
 
